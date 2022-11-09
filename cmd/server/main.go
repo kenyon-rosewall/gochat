@@ -2,10 +2,12 @@ package main
 
 import (
 	"os"
+
+	"github.com/kenyon-rosewall/gochat/pkg/parser"
 )
 
 func main() {
-	config, err := GetConfig(os.Args[1:])
+	config, err := parser.GetConfig(os.Args[1:])
 	if err != nil {
 		panic(err)
 	}

@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"net"
 	"os"
+
+	"github.com/kenyon-rosewall/gochat/pkg/parser"
 )
 
 func main() {
-	config, err := GetConfig(os.Args)
+	config, err := parser.GetConfig(os.Args)
 
 	tcpServer, err := net.ResolveTCPAddr("tcp", config["host"]+":"+config["port"])
 	conn, err := net.DialTCP("tcp", nil, tcpServer)
