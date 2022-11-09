@@ -1,7 +1,6 @@
 package main
 
 import (
-	"../parser"
 	"fmt"
 	"net"
 	"os"
