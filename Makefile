@@ -1,13 +1,17 @@
 all:
-	make server
-	make client
-	bin/gochat-server
+	@make packages
+	@make server
+	@make client
+	@bin/gochat-server
+
+packages:
+	@go build ./pkg/parser
 
 server:
-	go build -o bin/ ./cmd/gochat-server
+	@go build -o bin/ ./cmd/gochat-server
 
 client:
-	go build -o bin/ ./cmd/gochat-client
+	@go build -o bin/ ./cmd/gochat-client
 
 run:
-	bin/gochat-server
+	@bin/gochat-server

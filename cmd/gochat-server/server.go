@@ -14,6 +14,8 @@ func handleConnection(conn net.Conn) {
 		fmt.Println(err)
 	}
 
+	fmt.Printf("Request: %v\n", string(buffer))
+
 	if len(buffer) > 0 {
 		time := time.Now().Format(time.ANSIC)
 		resp := fmt.Sprintf("Your message is: %v. Received time: %v", string(buffer[:]), time)
