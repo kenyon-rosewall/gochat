@@ -1,28 +1,88 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"net"
-	"time"
+	"strings"
 )
 
-func handleConnection(conn net.Conn) {
-	buffer := make([]byte, 1024)
-	_, err := conn.Read(buffer)
+type client struct {
+	conn     net.Conn
+	reader   *bufio.Reader
+	room     string
+	username string
+}
+
+type room struct {
+	name    string
+	clients map[*client]struct{}
+}
+
+func newRoom(name string) *room {
+	return &room{
+		name:    name,
+		clients: make(map[*client]struct{}),
+	}
+}
+
+func handleConnection(conn net.Conn, rooms map[string]*room) {
+	cl := &client{
+		conn:   conn,
+		reader: bufio.NewReader(conn),
+	}
+
+	username, err := cl.reader.ReadString('\n')
 	if err != nil {
 		fmt.Println(err)
+		return
+	}
+	cl.username = strings.TrimSpace(username)
+
+	roomname, err := cl.reader.ReadString('\n')
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	cl.room = strings.TrimSpace(roomname)
+
+	r, ok := rooms[cl.room]
+	if !ok {
+		r = newRoom(cl.room)
+		rooms[cl.room] = r
+	}
+	r.clients[cl] = struct{}{}
+
+	fmt.Printf("%s has joined the room %s\n", cl.username, cl.room)
+
+	for {
+		message, err := bufio.NewReader(conn).ReadString('\n')
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		if strings.TrimSpace(message) == "STOP" {
+			break
+		}
+
+		for c := range r.clients {
+			if c != cl {
+				messageline := fmt.Sprintf("[%s:%s] %s", cl.username, cl.room, message)
+				c.conn.Write([]byte(messageline))
+			}
+		}
 	}
 
-	fmt.Printf("Request: %v\n", string(buffer))
+	delete(r.clients, cl)
+	fmt.Printf("%s has left the room %s\n", cl.username, cl.room)
 
-	if len(buffer) > 0 {
-		time := time.Now().Format(time.ANSIC)
-		resp := fmt.Sprintf("Your message is: %v. Received time: %v", string(buffer[:]), time)
-		conn.Write([]byte(resp))
+	if len(r.clients) == 0 {
+		delete(rooms, r.name)
+		fmt.Printf("Room %s has been closed\n", r.name)
 	}
 
-	// conn.Close()
+	conn.Close()
 }
 
 func StartServer(config map[string]string) error {
@@ -34,15 +94,18 @@ func StartServer(config map[string]string) error {
 
 	if ln != nil {
 		fmt.Println("Server listening on port " + config["port"])
+
+		rooms := make(map[string]*room)
+		rooms["default"] = &room{name: "default"}
+
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
 				log.Println(err)
+				continue
 			}
 
-			go func(conn net.Conn) {
-				handleConnection(conn)
-			}(conn)
+			go handleConnection(conn, rooms)
 		}
 	}
 

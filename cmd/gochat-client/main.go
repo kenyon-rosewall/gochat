@@ -11,20 +11,12 @@ import (
 )
 
 func sendMessage(conn net.Conn, msg string) {
-	fmt.Printf("Sending message: %v\n", msg)
-
-	_, err := conn.Write([]byte(msg))
-	if err != nil {
-		fmt.Println("Write data failed: ", err.Error())
-	}
+	fmt.Fprintf(conn, msg+"\n")
 }
 
 func receiveMessage(conn net.Conn) string {
-	response := make([]byte, 1024)
-	_, err := conn.Read(response)
-	if err != nil {
-		fmt.Println("Read data failed: ", err.Error())
-	}
+	response, _ := bufio.NewReader(conn).ReadString('\n')
+	fmt.Print("~>: " + response)
 
 	return string(response)
 }
@@ -36,6 +28,12 @@ func main() {
 	}
 
 	tcpAddr := config["host"] + ":" + config["port"]
+	username := config["username"]
+	room := "default"
+	if len(config["room"]) > 3 {
+		room = config["room"]
+	}
+
 	tcpServer, err := net.ResolveTCPAddr("tcp", tcpAddr)
 	if err != nil {
 		panic(err)
@@ -50,17 +48,24 @@ func main() {
 	defer conn.Close()
 
 	fmt.Printf("Remote Addr: %v\n", conn.RemoteAddr())
+	fmt.Printf("Username: %s\tRoom: %s\n", username, room)
 	fmt.Println("====================")
 
-	for {
-		var reqMsg string
-		fmt.Print("Your message: ")
-		inputReader := bufio.NewReader(os.Stdin)
-		reqMsg, _ = inputReader.ReadString('\n')
-		reqMsg = strings.TrimSuffix(reqMsg, "\n")
-		sendMessage(conn, reqMsg)
+	fmt.Fprintf(conn, username+"\n")
+	fmt.Fprintf(conn, room+"\n")
 
-		received := receiveMessage(conn)
-		fmt.Printf("Response: %v\n", string(received))
+	for {
+		inputReader := bufio.NewReader(os.Stdin)
+		fmt.Print(">> ")
+		reqMsg, _ := inputReader.ReadString('\n')
+		reqMsg = strings.TrimSuffix(reqMsg, "\n")
+
+		sendMessage(conn, reqMsg)
+		resp := receiveMessage(conn)
+
+		if strings.TrimSpace(string(resp)) == "STOP" {
+			fmt.Println("TCP client exiting...")
+			return
+		}
 	}
 }
