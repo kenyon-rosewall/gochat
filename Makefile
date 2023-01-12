@@ -1,3 +1,5 @@
+MAKEFLAGS += --no-print-directory
+
 all:
 	@make packages
 	@make server

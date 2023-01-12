@@ -3,20 +3,47 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"math/rand"
 	"net"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/kenyon-rosewall/gochat/pkg/parser"
 )
 
-func sendMessage(conn net.Conn, msg string) {
-	fmt.Fprintf(conn, msg+"\n")
+func randomUsername() string {
+	rand.Seed(time.Now().UnixNano())
+	nameLength := 5 + rand.Intn(5)
+	username := make([]byte, nameLength)
+
+	for i := 0; i < nameLength; i++ {
+		username[i] = byte(97 + rand.Intn(25))
+	}
+
+	return string(username)
 }
 
+func sendMessage(conn net.Conn, inputReader bufio.Reader, chMsg chan string) {
+	for {
+		fmt.Print(">> ")
+		firstByte, _ := inputReader.ReadByte()
+		if firstByte == '\n' {
+			continue
+		}
+		inputReader.UnreadByte()
+
+		msg, _ := inputReader.ReadString('\n')
+		msg = strings.TrimSpace(msg)
+
+		fmt.Fprintf(conn, msg+"\n")
+		chMsg <- msg
+		break
+	}
+}
 func receiveMessage(conn net.Conn) string {
 	response, _ := bufio.NewReader(conn).ReadString('\n')
-	fmt.Print("~>: " + response)
+	fmt.Print(response)
 
 	return string(response)
 }
@@ -24,46 +51,60 @@ func receiveMessage(conn net.Conn) string {
 func main() {
 	config, err := parser.GetConfig(os.Args[1:])
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 
 	tcpAddr := config["host"] + ":" + config["port"]
-	username := config["username"]
+	username := randomUsername()
 	room := "default"
-	if len(config["room"]) > 3 {
-		room = config["room"]
-	}
 
 	tcpServer, err := net.ResolveTCPAddr("tcp", tcpAddr)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 
 	fmt.Printf("Port: %v\n", tcpServer.Port)
 
 	conn, err := net.DialTCP("tcp", nil, tcpServer)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 	defer conn.Close()
 
+	inputReader := bufio.NewReader(os.Stdin)
 	fmt.Printf("Remote Addr: %v\n", conn.RemoteAddr())
-	fmt.Printf("Username: %s\tRoom: %s\n", username, room)
+	fmt.Println("====================")
+
+	fmt.Print("Username: ")
+	u_username, _ := inputReader.ReadString('\n')
+	u_username = strings.TrimSpace(u_username)
+	if u_username != "" {
+		username = u_username
+	}
+
+	fmt.Print("Room: ")
+	u_room, _ := inputReader.ReadString('\n')
+	u_room = strings.TrimSpace(u_room)
+	if u_room != "" {
+		room = u_room
+	}
+
 	fmt.Println("====================")
 
 	fmt.Fprintf(conn, username+"\n")
 	fmt.Fprintf(conn, room+"\n")
 
+	// sigChannel := make(chan os.Signal, 1)
+	// signal.Notify(sigChannel, os.Interrupt, syscall.SIGTERM)
+	msg := make(chan string)
 	for {
-		inputReader := bufio.NewReader(os.Stdin)
-		fmt.Print(">> ")
-		reqMsg, _ := inputReader.ReadString('\n')
-		reqMsg = strings.TrimSuffix(reqMsg, "\n")
+		go sendMessage(conn, *inputReader, msg)
+		receiveMessage(conn)
 
-		sendMessage(conn, reqMsg)
-		resp := receiveMessage(conn)
-
-		if strings.TrimSpace(string(resp)) == "STOP" {
+		if strings.TrimSpace(string(<-msg)) == "STOP" {
 			fmt.Println("TCP client exiting...")
 			return
 		}

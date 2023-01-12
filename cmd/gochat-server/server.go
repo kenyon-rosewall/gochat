@@ -68,8 +68,11 @@ func handleConnection(conn net.Conn, rooms map[string]*room) {
 
 		for c := range r.clients {
 			if c != cl {
-				messageline := fmt.Sprintf("[%s:%s] %s", cl.username, cl.room, message)
+				messageline := fmt.Sprintf("[%s:%s] %s\n", cl.username, cl.room, message)
 				c.conn.Write([]byte(messageline))
+			} else {
+				messageline := fmt.Sprintf("[you:%s] %s\n", cl.room, message)
+				cl.conn.Write([]byte(messageline))
 			}
 		}
 	}
