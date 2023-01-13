@@ -24,7 +24,7 @@ func randomUsername() string {
 	return string(username)
 }
 
-func sendMessage(conn net.Conn, inputReader bufio.Reader, chMsg chan string) {
+func sendMessage(conn net.Conn, inputReader bufio.Reader, key string, chMsg chan string) {
 	for {
 		fmt.Print(">> ")
 		firstByte, _ := inputReader.ReadByte()
@@ -36,16 +36,29 @@ func sendMessage(conn net.Conn, inputReader bufio.Reader, chMsg chan string) {
 		msg, _ := inputReader.ReadString('\n')
 		msg = strings.TrimSpace(msg)
 
-		fmt.Fprintf(conn, msg+"\n")
+		ciphermsg, nonce, mac := Encrypt(msg, key)
+
+		fmt.Fprintf(conn, "%s:%s:%s\n", nonce, mac, ciphermsg)
 		chMsg <- msg
 		break
 	}
 }
-func receiveMessage(conn net.Conn) string {
+func receiveMessage(conn net.Conn, key string) string {
 	response, _ := bufio.NewReader(conn).ReadString('\n')
-	fmt.Print(response)
 
-	return string(response)
+	resArr := strings.Split(response, ">")
+	metaArr := strings.Split(resArr[0], ":")
+	cipherArr := strings.Split(resArr[1], ":")
+	fmt.Println(resArr[1])
+
+	msg := Decrypt(cipherArr[2], cipherArr[0], cipherArr[1], key)
+
+	if msg != "" {
+		msgLine := fmt.Sprintf("[%s:%s] %s", metaArr[0], metaArr[1], msg)
+		fmt.Print(msgLine)
+	}
+
+	return string(msg)
 }
 
 func main() {
@@ -58,6 +71,7 @@ func main() {
 	tcpAddr := config["host"] + ":" + config["port"]
 	username := randomUsername()
 	room := "default"
+	key := config["key"]
 
 	tcpServer, err := net.ResolveTCPAddr("tcp", tcpAddr)
 	if err != nil {
@@ -101,8 +115,8 @@ func main() {
 	// signal.Notify(sigChannel, os.Interrupt, syscall.SIGTERM)
 	msg := make(chan string)
 	for {
-		go sendMessage(conn, *inputReader, msg)
-		receiveMessage(conn)
+		go sendMessage(conn, *inputReader, key, msg)
+		receiveMessage(conn, key)
 
 		if strings.TrimSpace(string(<-msg)) == "STOP" {
 			fmt.Println("TCP client exiting...")

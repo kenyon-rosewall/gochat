@@ -33,6 +33,7 @@ func handleConnection(conn net.Conn, rooms map[string]*room) {
 		reader: bufio.NewReader(conn),
 	}
 
+	// Encrypt these packets
 	username, err := cl.reader.ReadString('\n')
 	if err != nil {
 		fmt.Println(err)
@@ -62,16 +63,18 @@ func handleConnection(conn net.Conn, rooms map[string]*room) {
 			fmt.Println(err)
 			return
 		}
+
+		// Figure out another way (with a new variable) that we can communicate a STOP message
 		if strings.TrimSpace(message) == "STOP" {
 			break
 		}
 
 		for c := range r.clients {
 			if c != cl {
-				messageline := fmt.Sprintf("[%s:%s] %s\n", cl.username, cl.room, message)
+				messageline := fmt.Sprintf("%s:%s>%s\n", cl.username, cl.room, message)
 				c.conn.Write([]byte(messageline))
 			} else {
-				messageline := fmt.Sprintf("[you:%s] %s\n", cl.room, message)
+				messageline := fmt.Sprintf("you:%s>%s\n", cl.room, message)
 				cl.conn.Write([]byte(messageline))
 			}
 		}

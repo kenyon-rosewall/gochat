@@ -8,7 +8,7 @@ import (
 )
 
 func getValidKeys() (validKeys []string) {
-	return []string{"host", "port", "username", "room"}
+	return []string{"host", "port", "key"}
 }
 
 func getFilename(args []string) (filename string) {
