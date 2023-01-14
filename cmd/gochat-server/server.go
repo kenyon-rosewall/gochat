@@ -8,11 +8,14 @@ import (
 	"strings"
 )
 
+const headerLength = 8
+
 type client struct {
 	conn     net.Conn
 	reader   *bufio.Reader
 	room     string
 	username string
+	header   string
 }
 
 type room struct {
@@ -58,6 +61,7 @@ func handleConnection(conn net.Conn, rooms map[string]*room) {
 	fmt.Printf("%s has joined the room %s\n", cl.username, cl.room)
 
 	for {
+
 		message, err := bufio.NewReader(conn).ReadString('\n')
 		if err != nil {
 			fmt.Println(err)

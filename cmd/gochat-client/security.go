@@ -36,7 +36,7 @@ func Encrypt(msg string, key string) (string, string, string) {
 	ciphermsg := aesgcm.Seal(nil, nonce, cmsg, nil)
 
 	mac := hmac.New(sha256.New, ckey)
-	mac.Write(cmsg)
+	mac.Write(ciphermsg)
 	macsum := mac.Sum(nil)
 
 	return string(ciphermsg[:]), string(nonce[:]), string(macsum[:])
@@ -62,6 +62,8 @@ func Decrypt(ciphermsg string, nonce string, macsum string, key string) string {
 		msg = string(cmsg[:])
 	} else {
 		fmt.Println("Message received was not authentic")
+		fmt.Println(cmacsum)
+		fmt.Println(rmacsum)
 	}
 
 	return msg

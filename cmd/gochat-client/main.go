@@ -3,25 +3,19 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"math/rand"
 	"net"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/kenyon-rosewall/gochat/pkg/parser"
 )
 
 func randomUsername() string {
-	rand.Seed(time.Now().UnixNano())
-	nameLength := 5 + rand.Intn(5)
-	username := make([]byte, nameLength)
+	//nameLength := 5 + rand.Intn(5)
+	username := "kenyon"
+	//username := GetRandomString(nameLength)
 
-	for i := 0; i < nameLength; i++ {
-		username[i] = byte(97 + rand.Intn(25))
-	}
-
-	return string(username)
+	return username
 }
 
 func sendMessage(conn net.Conn, inputReader bufio.Reader, key string, chMsg chan string) {
@@ -78,9 +72,6 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-
-	fmt.Printf("Port: %v\n", tcpServer.Port)
-
 	conn, err := net.DialTCP("tcp", nil, tcpServer)
 	if err != nil {
 		fmt.Println(err)
@@ -88,10 +79,10 @@ func main() {
 	}
 	defer conn.Close()
 
-	inputReader := bufio.NewReader(os.Stdin)
 	fmt.Printf("Remote Addr: %v\n", conn.RemoteAddr())
 	fmt.Println("====================")
 
+	inputReader := bufio.NewReader(os.Stdin)
 	fmt.Print("Username: ")
 	u_username, _ := inputReader.ReadString('\n')
 	u_username = strings.TrimSpace(u_username)
