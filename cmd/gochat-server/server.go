@@ -90,7 +90,6 @@ func handleConnection(conn net.Conn, rooms map[string]*room) {
 			}
 
 			dataLength := binary.BigEndian.Uint64(header[10:])
-			fmt.Println(dataLength)
 			data := make([]byte, dataLength)
 			_, err = conn.Read(data)
 			if err != nil {
@@ -102,19 +101,23 @@ func handleConnection(conn net.Conn, rooms map[string]*room) {
 			packets[i] = append(packets[i], append(header, data...)...)
 		}
 
-		if wantToQuit {
-			break
-		}
-
 		for c := range r.clients {
 			if c != cl {
-				for i := 0; i < 3; i++ {
-					if _, err := c.conn.Write(packets[i]); err != nil {
-						fmt.Println("Error when sending message to the client:", err)
+				if wantToQuit {
+					// TODO: Send a message that username left the room
+				} else {
+					for i := 0; i < 3; i++ {
+						if _, err := c.conn.Write(packets[i]); err != nil {
+							fmt.Println("Error when sending message to the client:", err)
+						}
+						packets[i] = []byte{}
 					}
-					packets[i] = []byte{}
 				}
 			}
+		}
+
+		if wantToQuit {
+			break
 		}
 	}
 

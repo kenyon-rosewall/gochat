@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"os"
@@ -53,6 +54,10 @@ func unpackHeader(conn net.Conn) (uint64, uint16, []byte) {
 	header := make([]byte, headerLength)
 	_, err := conn.Read(header)
 	if err != nil {
+		if err == io.EOF {
+			// connection closed by the other side
+			return 0, 0, nil
+		}
 		fmt.Println("Could not receive message header: ", err)
 	}
 	sessionID := binary.BigEndian.Uint64(header[:8])
@@ -102,22 +107,26 @@ func sendMessage(c *client, inputReader bufio.Reader, chMsg chan string) {
 	}
 }
 
+// TODO: Implement a header message that states what type of message is coming
 func receiveMessage(c *client, chMsg chan string) {
+	msg := "/stop"
 	cipherSession, cipherType, cipher := unpackHeader(c.conn)
-	nonceSession, nonceType, nonce := unpackHeader(c.conn)
-	macsumSession, macsumType, macsum := unpackHeader(c.conn)
+	if cipherSession > 0 && cipherType > 0 && len(cipher) > 0 {
+		nonceSession, nonceType, nonce := unpackHeader(c.conn)
+		macsumSession, macsumType, macsum := unpackHeader(c.conn)
 
-	if cipherSession != nonceSession || cipherSession != macsumSession {
-		fmt.Println("Session ids do not match")
-		return
-	}
-	if cipherType != datatype_Message || nonceType != datatype_Nonce || macsumType != datatype_Macsum {
-		fmt.Println("Data types do not line up")
-		return
-	}
+		if cipherSession != nonceSession || cipherSession != macsumSession {
+			fmt.Println("Session ids do not match")
+			return
+		}
+		if cipherType != datatype_Message || nonceType != datatype_Nonce || macsumType != datatype_Macsum {
+			fmt.Println("Data types do not line up")
+			return
+		}
 
-	msg := Decrypt(cipher, nonce, macsum, c.key)
-	writeMessage(fmt.Sprintf("\n%s", msg))
+		msg := Decrypt(cipher, nonce, macsum, c.key)
+		writeMessage(fmt.Sprintf("\n%s", msg))
+	}
 
 	chMsg <- msg
 }
