@@ -69,9 +69,9 @@ func unpackHeader(conn net.Conn) (uint64, uint16, []byte) {
 
 func sendMessage(c *client, inputReader bufio.Reader, chMsg chan string) {
 	for {
-		fmt.Print(">> ")
 		firstByte, _ := inputReader.ReadByte()
 		if firstByte == '\n' {
+			fmt.Print(">> ")
 			continue
 		}
 		inputReader.UnreadByte()
@@ -102,7 +102,7 @@ func sendMessage(c *client, inputReader bufio.Reader, chMsg chan string) {
 	}
 }
 
-func receiveMessage(c *client) {
+func receiveMessage(c *client, chMsg chan string) {
 	cipherSession, cipherType, cipher := unpackHeader(c.conn)
 	nonceSession, nonceType, nonce := unpackHeader(c.conn)
 	macsumSession, macsumType, macsum := unpackHeader(c.conn)
@@ -117,7 +117,9 @@ func receiveMessage(c *client) {
 	}
 
 	msg := Decrypt(cipher, nonce, macsum, c.key)
-	writeMessage(msg)
+	writeMessage(fmt.Sprintf("\n%s", msg))
+
+	chMsg <- msg
 }
 
 func connect(args []string) (*client, error) {
@@ -192,10 +194,12 @@ func main() {
 	// sigChannel := make(chan os.Signal, 1)
 	// signal.Notify(sigChannel, os.Interrupt, syscall.SIGTERM)
 	msg := make(chan string)
-	go sendMessage(c, *inputReader, msg)
 
 	for {
-		receiveMessage(c)
+		fmt.Print(">> ")
+
+		go sendMessage(c, *inputReader, msg)
+		go receiveMessage(c, msg)
 
 		if strings.TrimSpace(string(<-msg)) == "/stop" {
 			fmt.Println("TCP client exiting...")

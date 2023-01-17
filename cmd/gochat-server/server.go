@@ -78,7 +78,9 @@ func handleConnection(conn net.Conn, rooms map[string]*room) {
 			header := make([]byte, headerLength)
 			_, err := conn.Read(header)
 			if err != nil {
-				fmt.Println("Could not read header from packet")
+				fmt.Println("Could not read header from packet: ", err)
+				wantToQuit = true
+				break
 			}
 
 			dataType := binary.BigEndian.Uint16(header[8:10])
@@ -92,10 +94,16 @@ func handleConnection(conn net.Conn, rooms map[string]*room) {
 			data := make([]byte, dataLength)
 			_, err = conn.Read(data)
 			if err != nil {
-				fmt.Println("Could not read data from packet")
+				fmt.Println("Could not read data from packet: ", err)
+				wantToQuit = true
+				break
 			}
 
 			packets[i] = append(packets[i], append(header, data...)...)
+		}
+
+		if wantToQuit {
+			break
 		}
 
 		for c := range r.clients {
@@ -107,10 +115,6 @@ func handleConnection(conn net.Conn, rooms map[string]*room) {
 					packets[i] = []byte{}
 				}
 			}
-		}
-
-		if wantToQuit {
-			break
 		}
 	}
 
