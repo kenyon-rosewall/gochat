@@ -2,20 +2,28 @@ package main
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"strings"
 )
 
-const headerLength = 8
+const headerLength = 18
+const (
+	datatype_Macsum = iota
+	datatype_Nonce
+	datatype_Message
+	datatype_Quit
+)
 
 type client struct {
-	conn     net.Conn
-	reader   *bufio.Reader
-	room     string
-	username string
-	header   string
+	conn      net.Conn
+	reader    *bufio.Reader
+	room      string
+	username  string
+	sessionID uint64
 }
 
 type room struct {
@@ -32,8 +40,9 @@ func newRoom(name string) *room {
 
 func handleConnection(conn net.Conn, rooms map[string]*room) {
 	cl := &client{
-		conn:   conn,
-		reader: bufio.NewReader(conn),
+		conn:      conn,
+		reader:    bufio.NewReader(conn),
+		sessionID: uint64(rand.Int63()),
 	}
 
 	// Encrypt these packets
@@ -60,27 +69,48 @@ func handleConnection(conn net.Conn, rooms map[string]*room) {
 
 	fmt.Printf("%s has joined the room %s\n", cl.username, cl.room)
 
+	fmt.Fprintf(conn, "%d\n", cl.sessionID)
+
+	wantToQuit := false
 	for {
+		var packets [3][]byte
+		for i := 0; i < 3; i++ {
+			header := make([]byte, headerLength)
+			_, err := conn.Read(header)
+			if err != nil {
+				fmt.Println("Could not read header from packet")
+			}
 
-		message, err := bufio.NewReader(conn).ReadString('\n')
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
+			dataType := binary.BigEndian.Uint16(header[8:10])
+			if dataType == datatype_Quit {
+				wantToQuit = true
+				break
+			}
 
-		// Figure out another way (with a new variable) that we can communicate a STOP message
-		if strings.TrimSpace(message) == "STOP" {
-			break
+			dataLength := binary.BigEndian.Uint64(header[10:])
+			fmt.Println(dataLength)
+			data := make([]byte, dataLength)
+			_, err = conn.Read(data)
+			if err != nil {
+				fmt.Println("Could not read data from packet")
+			}
+
+			packets[i] = append(packets[i], append(header, data...)...)
 		}
 
 		for c := range r.clients {
 			if c != cl {
-				messageline := fmt.Sprintf("%s:%s>%s\n", cl.username, cl.room, message)
-				c.conn.Write([]byte(messageline))
-			} else {
-				messageline := fmt.Sprintf("you:%s>%s\n", cl.room, message)
-				cl.conn.Write([]byte(messageline))
+				for i := 0; i < 3; i++ {
+					if _, err := c.conn.Write(packets[i]); err != nil {
+						fmt.Println("Error when sending message to the client:", err)
+					}
+					packets[i] = []byte{}
+				}
 			}
+		}
+
+		if wantToQuit {
+			break
 		}
 	}
 

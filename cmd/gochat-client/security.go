@@ -42,27 +42,24 @@ func Encrypt(msg string, key string) (string, string, string) {
 	return string(ciphermsg[:]), string(nonce[:]), string(macsum[:])
 }
 
-func Decrypt(ciphermsg string, nonce string, macsum string, key string) string {
+func Decrypt(ciphermsg []byte, nonce []byte, macsum []byte, key string) string {
 	ckey := []byte(key)
-	cciphermsg := []byte(ciphermsg)
-	cnonce := []byte(nonce)
-	cmacsum := []byte(macsum)
 	msg := ""
 
 	mac := hmac.New(sha256.New, ckey)
-	mac.Write(cciphermsg)
+	mac.Write(ciphermsg)
 	rmacsum := mac.Sum(nil)
 
-	if hmac.Equal(cmacsum, rmacsum) {
+	if hmac.Equal(macsum, rmacsum) {
 		aesgcm := getGCM(ckey)
-		cmsg, err := aesgcm.Open(nil, cnonce, cciphermsg, nil)
+		cmsg, err := aesgcm.Open(nil, nonce, ciphermsg, nil)
 		if err != nil {
 			fmt.Println("Could not decrypt message with nonce")
 		}
 		msg = string(cmsg[:])
 	} else {
 		fmt.Println("Message received was not authentic")
-		fmt.Println(cmacsum)
+		fmt.Println(macsum)
 		fmt.Println(rmacsum)
 	}
 

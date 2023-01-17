@@ -2,23 +2,72 @@ package main
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
+	"math/rand"
 	"net"
 	"os"
 	"strings"
 
 	"github.com/kenyon-rosewall/gochat/pkg/parser"
+	"github.com/kenyon-rosewall/gochat/pkg/utils"
 )
 
+const headerLength = 18
+const (
+	datatype_Macsum = iota
+	datatype_Nonce
+	datatype_Message
+	datatype_Quit
+)
+
+type client struct {
+	conn      *net.TCPConn
+	username  string
+	room      string
+	key       string
+	sessionID uint64
+}
+
 func randomUsername() string {
-	//nameLength := 5 + rand.Intn(5)
-	username := "kenyon"
-	//username := GetRandomString(nameLength)
+	nameLength := 5 + rand.Intn(5)
+	username := utils.GetRandomString(nameLength)
 
 	return username
 }
 
-func sendMessage(conn net.Conn, inputReader bufio.Reader, key string, chMsg chan string) {
+func writeMessage(msg string) {
+	fmt.Println(msg)
+}
+
+func createHeader(sessionID uint64, dataType uint16, data string) []byte {
+	header := make([]byte, headerLength)
+	binary.BigEndian.PutUint64(header[:8], sessionID)
+	binary.BigEndian.PutUint16(header[8:10], dataType)
+	binary.BigEndian.PutUint64(header[10:], uint64(len(data)))
+
+	return header
+}
+
+func unpackHeader(conn net.Conn) (uint64, uint16, []byte) {
+	header := make([]byte, headerLength)
+	_, err := conn.Read(header)
+	if err != nil {
+		fmt.Println("Could not receive message header: ", err)
+	}
+	sessionID := binary.BigEndian.Uint64(header[:8])
+	dataType := binary.BigEndian.Uint16(header[8:10])
+	dataLength := binary.BigEndian.Uint64(header[10:])
+	data := make([]byte, dataLength)
+	_, err = conn.Read(data)
+	if err != nil {
+		fmt.Printf("Could not read data for sessionID %d and data type %d\n", sessionID, dataType)
+	}
+
+	return sessionID, dataType, data
+}
+
+func sendMessage(c *client, inputReader bufio.Reader, chMsg chan string) {
 	for {
 		fmt.Print(">> ")
 		firstByte, _ := inputReader.ReadByte()
@@ -30,56 +79,90 @@ func sendMessage(conn net.Conn, inputReader bufio.Reader, key string, chMsg chan
 		msg, _ := inputReader.ReadString('\n')
 		msg = strings.TrimSpace(msg)
 
-		ciphermsg, nonce, mac := Encrypt(msg, key)
+		if msg == "/stop" {
+			quitheader := createHeader(c.sessionID, datatype_Quit, "")
+			c.conn.Write(quitheader)
 
-		fmt.Fprintf(conn, "%s:%s:%s\n", nonce, mac, ciphermsg)
+			writeMessage(fmt.Sprintf("You have left the room %s", c.room))
+		} else {
+			sendMsg := fmt.Sprintf("[%s] %s", c.username, msg)
+			ciphermsg, nonce, mac := Encrypt(sendMsg, c.key)
+
+			cipherheader := createHeader(c.sessionID, datatype_Message, ciphermsg)
+			c.conn.Write(append(cipherheader, ciphermsg...))
+			nonceheader := createHeader(c.sessionID, datatype_Nonce, nonce)
+			c.conn.Write(append(nonceheader, nonce...))
+			macheader := createHeader(c.sessionID, datatype_Macsum, mac)
+			c.conn.Write(append(macheader, mac...))
+
+			writeMessage(fmt.Sprintf("[you] %s", msg))
+		}
+
 		chMsg <- msg
-		break
 	}
 }
-func receiveMessage(conn net.Conn, key string) string {
-	response, _ := bufio.NewReader(conn).ReadString('\n')
 
-	resArr := strings.Split(response, ">")
-	metaArr := strings.Split(resArr[0], ":")
-	cipherArr := strings.Split(resArr[1], ":")
-	fmt.Println(resArr[1])
+func receiveMessage(c *client) {
+	cipherSession, cipherType, cipher := unpackHeader(c.conn)
+	nonceSession, nonceType, nonce := unpackHeader(c.conn)
+	macsumSession, macsumType, macsum := unpackHeader(c.conn)
 
-	msg := Decrypt(cipherArr[2], cipherArr[0], cipherArr[1], key)
-
-	if msg != "" {
-		msgLine := fmt.Sprintf("[%s:%s] %s", metaArr[0], metaArr[1], msg)
-		fmt.Print(msgLine)
+	if cipherSession != nonceSession || cipherSession != macsumSession {
+		fmt.Println("Session ids do not match")
+		return
+	}
+	if cipherType != datatype_Message || nonceType != datatype_Nonce || macsumType != datatype_Macsum {
+		fmt.Println("Data types do not line up")
+		return
 	}
 
-	return string(msg)
+	msg := Decrypt(cipher, nonce, macsum, c.key)
+	writeMessage(msg)
+}
+
+func connect(args []string) (*client, error) {
+	// Defaults
+	username := randomUsername()
+	room := "default"
+	key := ""
+
+	config, err := parser.GetConfig(args)
+	if err != nil {
+		return nil, err
+	} else {
+		tcpAddr := config["host"] + ":" + config["port"]
+		key = config["key"]
+
+		tcpServer, err := net.ResolveTCPAddr("tcp", tcpAddr)
+		if err != nil {
+			return nil, err
+		} else {
+			conn, err := net.DialTCP("tcp", nil, tcpServer)
+			if err != nil {
+				return nil, err
+			}
+
+			c := &client{
+				conn:     conn,
+				username: username,
+				room:     room,
+				key:      key,
+			}
+
+			return c, nil
+		}
+	}
 }
 
 func main() {
-	config, err := parser.GetConfig(os.Args[1:])
+	c, err := connect(os.Args[1:])
 	if err != nil {
 		fmt.Println(err)
-		return
+		os.Exit(1)
 	}
+	defer c.conn.Close()
 
-	tcpAddr := config["host"] + ":" + config["port"]
-	username := randomUsername()
-	room := "default"
-	key := config["key"]
-
-	tcpServer, err := net.ResolveTCPAddr("tcp", tcpAddr)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	conn, err := net.DialTCP("tcp", nil, tcpServer)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer conn.Close()
-
-	fmt.Printf("Remote Addr: %v\n", conn.RemoteAddr())
+	fmt.Printf("Remote Addr: %v\n", c.conn.RemoteAddr())
 	fmt.Println("====================")
 
 	inputReader := bufio.NewReader(os.Stdin)
@@ -87,29 +170,34 @@ func main() {
 	u_username, _ := inputReader.ReadString('\n')
 	u_username = strings.TrimSpace(u_username)
 	if u_username != "" {
-		username = u_username
+		c.username = u_username
 	}
 
 	fmt.Print("Room: ")
 	u_room, _ := inputReader.ReadString('\n')
 	u_room = strings.TrimSpace(u_room)
 	if u_room != "" {
-		room = u_room
+		c.room = u_room
 	}
 
 	fmt.Println("====================")
 
-	fmt.Fprintf(conn, username+"\n")
-	fmt.Fprintf(conn, room+"\n")
+	fmt.Fprintf(c.conn, c.username+"\n")
+	fmt.Fprintf(c.conn, c.room+"\n")
+
+	fmt.Fscanf(c.conn, "%d\n", &c.sessionID)
+
+	fmt.Printf("You have been given session id %d\n", c.sessionID)
 
 	// sigChannel := make(chan os.Signal, 1)
 	// signal.Notify(sigChannel, os.Interrupt, syscall.SIGTERM)
 	msg := make(chan string)
-	for {
-		go sendMessage(conn, *inputReader, key, msg)
-		receiveMessage(conn, key)
+	go sendMessage(c, *inputReader, msg)
 
-		if strings.TrimSpace(string(<-msg)) == "STOP" {
+	for {
+		receiveMessage(c)
+
+		if strings.TrimSpace(string(<-msg)) == "/stop" {
 			fmt.Println("TCP client exiting...")
 			return
 		}
