@@ -10,8 +10,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/kenyon-rosewall/gochat/pkg/parser"
-	"github.com/kenyon-rosewall/gochat/pkg/utils"
+	"bitbucket.org/krosewall/gochat/pkg/parser"
+	"bitbucket.org/krosewall/gochat/pkg/utils"
 )
 
 const headerLength = 18

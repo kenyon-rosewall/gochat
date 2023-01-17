@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/kenyon-rosewall/gochat/pkg/parser"
+	"bitbucket.org/krosewall/gochat/pkg/parser"
 )
 
 func main() {
