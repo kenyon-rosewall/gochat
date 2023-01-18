@@ -2,20 +2,13 @@ package main
 
 import (
 	"bufio"
-	"encoding/binary"
 	"fmt"
 	"log"
 	"math/rand"
 	"net"
 	"strings"
-)
 
-const headerLength = 18
-const (
-	datatype_Macsum = iota
-	datatype_Nonce
-	datatype_Message
-	datatype_Quit
+	"bitbucket.org/krosewall/gochat/pkg/transfer"
 )
 
 type client struct {
@@ -73,44 +66,18 @@ func handleConnection(conn net.Conn, rooms map[string]*room) {
 
 	wantToQuit := false
 	for {
-		var packets [3][]byte
-		for i := 0; i < 3; i++ {
-			header := make([]byte, headerLength)
-			_, err := conn.Read(header)
-			if err != nil {
-				fmt.Println("Could not read header from packet: ", err)
-				wantToQuit = true
-				break
-			}
-
-			dataType := binary.BigEndian.Uint16(header[8:10])
-			if dataType == datatype_Quit {
-				wantToQuit = true
-				break
-			}
-
-			dataLength := binary.BigEndian.Uint64(header[10:])
-			data := make([]byte, dataLength)
-			_, err = conn.Read(data)
-			if err != nil {
-				fmt.Println("Could not read data from packet: ", err)
-				wantToQuit = true
-				break
-			}
-
-			packets[i] = append(packets[i], append(header, data...)...)
-		}
+		t := transfer.UnpackTransfer(conn, "")
 
 		for c := range r.clients {
 			if c != cl {
-				if wantToQuit {
+				if t.MessageType == transfer.Quit {
+					wantToQuit = true
 					// TODO: Send a message that username left the room
 				} else {
 					for i := 0; i < 3; i++ {
-						if _, err := c.conn.Write(packets[i]); err != nil {
+						if _, err := c.conn.Write(t.FullTransfer); err != nil {
 							fmt.Println("Error when sending message to the client:", err)
 						}
-						packets[i] = []byte{}
 					}
 				}
 			}

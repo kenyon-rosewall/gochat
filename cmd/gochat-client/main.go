@@ -2,25 +2,18 @@ package main
 
 import (
 	"bufio"
-	"encoding/binary"
 	"fmt"
-	"io"
 	"math/rand"
 	"net"
 	"os"
 	"strings"
 
 	"bitbucket.org/krosewall/gochat/pkg/parser"
+	"bitbucket.org/krosewall/gochat/pkg/transfer"
 	"bitbucket.org/krosewall/gochat/pkg/utils"
 )
 
-const headerLength = 18
-const (
-	datatype_Macsum = iota
-	datatype_Nonce
-	datatype_Message
-	datatype_Quit
-)
+const quitMessage = "/quit"
 
 type client struct {
 	conn      *net.TCPConn
@@ -41,37 +34,6 @@ func writeMessage(msg string) {
 	fmt.Println(msg)
 }
 
-func createHeader(sessionID uint64, dataType uint16, data string) []byte {
-	header := make([]byte, headerLength)
-	binary.BigEndian.PutUint64(header[:8], sessionID)
-	binary.BigEndian.PutUint16(header[8:10], dataType)
-	binary.BigEndian.PutUint64(header[10:], uint64(len(data)))
-
-	return header
-}
-
-func unpackHeader(conn net.Conn) (uint64, uint16, []byte) {
-	header := make([]byte, headerLength)
-	_, err := conn.Read(header)
-	if err != nil {
-		if err == io.EOF {
-			// connection closed by the other side
-			return 0, 0, nil
-		}
-		fmt.Println("Could not receive message header: ", err)
-	}
-	sessionID := binary.BigEndian.Uint64(header[:8])
-	dataType := binary.BigEndian.Uint16(header[8:10])
-	dataLength := binary.BigEndian.Uint64(header[10:])
-	data := make([]byte, dataLength)
-	_, err = conn.Read(data)
-	if err != nil {
-		fmt.Printf("Could not read data for sessionID %d and data type %d\n", sessionID, dataType)
-	}
-
-	return sessionID, dataType, data
-}
-
 func sendMessage(c *client, inputReader bufio.Reader, chMsg chan string) {
 	for {
 		firstByte, _ := inputReader.ReadByte()
@@ -84,21 +46,16 @@ func sendMessage(c *client, inputReader bufio.Reader, chMsg chan string) {
 		msg, _ := inputReader.ReadString('\n')
 		msg = strings.TrimSpace(msg)
 
-		if msg == "/stop" {
-			quitheader := createHeader(c.sessionID, datatype_Quit, "")
-			c.conn.Write(quitheader)
+		if msg == quitMessage {
+			quitTransfer := transfer.PackTransfer(c.sessionID, transfer.Quit, "", c.key)
+			c.conn.Write(quitTransfer)
 
 			writeMessage(fmt.Sprintf("You have left the room %s", c.room))
 		} else {
 			sendMsg := fmt.Sprintf("[%s] %s", c.username, msg)
-			ciphermsg, nonce, mac := Encrypt(sendMsg, c.key)
 
-			cipherheader := createHeader(c.sessionID, datatype_Message, ciphermsg)
-			c.conn.Write(append(cipherheader, ciphermsg...))
-			nonceheader := createHeader(c.sessionID, datatype_Nonce, nonce)
-			c.conn.Write(append(nonceheader, nonce...))
-			macheader := createHeader(c.sessionID, datatype_Macsum, mac)
-			c.conn.Write(append(macheader, mac...))
+			t := transfer.PackTransfer(c.sessionID, transfer.Message, sendMsg, c.key)
+			c.conn.Write(t)
 
 			writeMessage(fmt.Sprintf("[you] %s", msg))
 		}
@@ -107,24 +64,20 @@ func sendMessage(c *client, inputReader bufio.Reader, chMsg chan string) {
 	}
 }
 
-// TODO: Implement a header message that states what type of message is coming
 func receiveMessage(c *client, chMsg chan string) {
-	msg := "/stop"
-	cipherSession, cipherType, cipher := unpackHeader(c.conn)
-	if cipherSession > 0 && cipherType > 0 && len(cipher) > 0 {
-		nonceSession, nonceType, nonce := unpackHeader(c.conn)
-		macsumSession, macsumType, macsum := unpackHeader(c.conn)
+	t := transfer.UnpackTransfer(c.conn, c.key)
+	msg := t.Body
 
-		if cipherSession != nonceSession || cipherSession != macsumSession {
-			fmt.Println("Session ids do not match")
-			return
-		}
-		if cipherType != datatype_Message || nonceType != datatype_Nonce || macsumType != datatype_Macsum {
-			fmt.Println("Data types do not line up")
-			return
-		}
+	if t.SessionID != c.sessionID {
+		fmt.Println("Received message intended for another client")
+		return
+	}
 
-		msg := Decrypt(cipher, nonce, macsum, c.key)
+	if t.MessageType == transfer.Quit {
+		msg = quitMessage
+	} else if t.MessageType == transfer.Command {
+
+	} else {
 		writeMessage(fmt.Sprintf("\n%s", msg))
 	}
 
@@ -210,7 +163,7 @@ func main() {
 		go sendMessage(c, *inputReader, msg)
 		go receiveMessage(c, msg)
 
-		if strings.TrimSpace(string(<-msg)) == "/stop" {
+		if strings.TrimSpace(string(<-msg)) == quitMessage {
 			fmt.Println("TCP client exiting...")
 			return
 		}
