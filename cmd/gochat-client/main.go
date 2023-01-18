@@ -68,11 +68,6 @@ func receiveMessage(c *client, chMsg chan string) {
 	t := transfer.UnpackTransfer(c.conn, c.key)
 	msg := t.Body
 
-	if t.SessionID != c.sessionID {
-		fmt.Println("Received message intended for another client")
-		return
-	}
-
 	if t.MessageType == transfer.Quit {
 		msg = quitMessage
 	} else if t.MessageType == transfer.Command {

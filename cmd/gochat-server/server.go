@@ -74,10 +74,8 @@ func handleConnection(conn net.Conn, rooms map[string]*room) {
 					wantToQuit = true
 					// TODO: Send a message that username left the room
 				} else {
-					for i := 0; i < 3; i++ {
-						if _, err := c.conn.Write(t.FullTransfer); err != nil {
-							fmt.Println("Error when sending message to the client:", err)
-						}
+					if _, err := c.conn.Write(t.FullTransfer); err != nil {
+						fmt.Println("Error when sending message to the client:", err)
 					}
 				}
 			}

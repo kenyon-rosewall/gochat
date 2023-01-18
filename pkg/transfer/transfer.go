@@ -59,6 +59,7 @@ func unpackPacket(t []byte, idx int) (uint64, uint16, []byte, int) {
 	return sessionID, dataType, data, dataEnd
 }
 
+// TODO: Rewrite this with the length of the Transfer found in the TransferHeader
 func getFullTransfer(conn net.Conn) ([]byte, error) {
 	var fullTransfer []byte
 
@@ -76,7 +77,7 @@ func getFullTransfer(conn net.Conn) ([]byte, error) {
 			return nil, err
 		}
 
-		dataLength := binary.BigEndian.Uint16(h[10:])
+		dataLength := binary.BigEndian.Uint64(h[10:])
 		d := make([]byte, dataLength)
 		_, err = conn.Read(d)
 		if err != nil {
@@ -108,6 +109,8 @@ func PackTransfer(sessionID uint64, transferType TransferType, msg string, key s
 		transfer = append(transfer, noncePacket...)
 		transfer = append(transfer, macsumPacket...)
 	}
+
+	// TODO: Update the TransferHeader to include the length of the entire Transfer
 
 	return transfer
 }
